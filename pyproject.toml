@@ -15,6 +15,7 @@ dependencies = [
   "onnx",
   "onnxruntime",
   "onnxscript",
+  "transformers>=4.50,<4.57",
 ]
 
 [tool.uv.sources]

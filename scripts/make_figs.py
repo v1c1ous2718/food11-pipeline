@@ -144,6 +144,31 @@ def fig_quant():
     save(fig, "quant_pareto.png")
 
 
+def fig_transfer():
+    t, a = j("transfer/summary.json"), j("summary_aug.json")
+    if not t or "seeds" not in t or not a: return
+    sd = t["seeds"]
+    rows = [("ResNet-18, from scratch (128 px)", a["best"]["test_mean"], a["best"]["test_std"], INK2),
+            ("ResNet-18, ImageNet (128 px)", sd["r18_in1k_128"]["test_mean"], sd["r18_in1k_128"]["test_std"], C1),
+            ("ResNet-18, ImageNet (224 px)", sd["r18_in1k_224"]["test_mean"], sd["r18_in1k_224"]["test_std"], C1),
+            ("CLIP ViT-B/16, zero-shot", t["clip_zeroshot"]["test"], None, C3),
+            ("CLIP ViT-B/16, linear probe", t["clip_linear_probe"]["best"]["test"], None, C3),
+            ("CLIP ViT-B/16, fine-tune", sd["clip_b16_224"]["test_mean"], sd["clip_b16_224"]["test_std"], C2)]
+    if "pseudo" in t:
+        st = t["pseudo"]["student"]
+        rows.append(("CLIP ViT-B/16, fine-tune + pseudo-labels", st["test_mean"], st["test_std"], C2))
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(rows) + 0.9))
+    y = np.arange(len(rows))[::-1]
+    for yi, (lab, m, sdv, c) in zip(y, rows):
+        ax.barh(yi, m * 100, color=c, height=0.62)
+        if sdv is not None: ax.errorbar(m * 100, yi, xerr=sdv * 100, color=INK, capsize=3, lw=1)
+        ax.text(m * 100 + (sdv or 0) * 100 + 0.8, yi, f"{m*100:.1f}" + (f" ± {sdv*100:.1f}" if sdv is not None else ""), va="center", fontsize=9)
+    ax.set_yticks(y, [r[0] for r in rows]); ax.set_xlim(50, 106); ax.set_xlabel("Food-11 test accuracy (%)")
+    ax.grid(axis="y", visible=False)
+    ax.set_title("Pretrained backbones (mean ± std over 3 seeds where shown)", fontsize=10)
+    save(fig, "transfer.png")
+
+
 if __name__ == "__main__":
     fig_profile(); fig_lr(); fig_curves()
     for st, title, tr in [("sched", "Optimizer x LR schedule", False), ("aug", "Augmentation ladder", True),
@@ -151,4 +176,4 @@ if __name__ == "__main__":
                           ("distill_light", "Student recipe follow-up (200 epochs)", True)]:
         s = j(f"summary_{st}.json")
         if s: dotplot(s["rows"], title, f"{st}_dots.png", tr)
-    fig_hpo(); fig_quant()
+    fig_hpo(); fig_quant(); fig_transfer()

@@ -1,6 +1,6 @@
 # Food-11：從訓練到 INT8 部署的對照實驗
 
-資料：李宏毅 ML2021 HW3 的 Food-11（11 類）。ResNet-18 與 MobileNetV2-0.5 都從零開始訓練（不使用 pretrained weights，與作業規定一致）。
+資料：李宏毅 ML2021 HW3 的 Food-11（11 類）。ResNet-18 與 MobileNetV2-0.5 都從零開始訓練（不使用 pretrained weights，與作業規定一致）。第 8 節是作業規定以外的追加實驗，改用預訓練模型。
 硬體：RTX 3060 12 GB、Intel Core i5-12400、WSL2。軟體：PyTorch 2.7.1+cu128、torchvision 0.22.1，以 uv 管理。
 
 ## 0. 實驗規則
@@ -144,13 +144,51 @@
 - FP32 的 MobileNetV2 用 4 threads 比 1 thread 慢（4.55 vs 4.04 ms）：batch 1 的小模型，平行化的開銷比它省下的計算時間還多。
 - 用 GPU 跑 FP16、batch 1 時，ResNet-18 是 1.70 ms，MobileNetV2-0.5 卻是 3.87 ms，反而比較慢。小 batch 時 GPU 的瓶頸是 kernel launch 次數；MobileNetV2 層數多、depthwise conv 運算量小，所以參數少也沒有比較快。
 
-## 8. 結論
+## 8. 追加：預訓練 backbone（不在作業規定內）
+
+作業規定從零開始訓練，前面七節都照做。這一節追加：如果允許使用預訓練權重，accuracy 能到哪裡。設計在跑之前就固定（見 `scripts/transfer.py` 開頭），split 和第 0 節相同，選擇一樣只看 val。
+
+- **ResNet-18（ImageNet）**：128 px（和從零訓練相同的輸入）與 224 px 各跑一次，lr {3e-4, 1e-3, 3e-3}、30 epochs，用 seed 0 的 val 選 lr，再跑 3 個 seed。
+- **CLIP ViT-B/16**：
+  - zero-shot：prompt 是「a photo of {類別}, a type of food.」。
+  - linear probe：只訓練最後的線性層，weight decay 用 val 選。
+  - 完整 fine-tune：分類頭用 zero-shot 的文字向量初始化，lr {5e-6, 1e-5, 3e-5}、10 epochs，選法同上。
+- **Pseudo-labeling**：val 最好的模型（CLIP fine-tune）幫 6,786 張無標籤圖片標註（flip TTA），信心度 ≥ 0.9 的留下，和 train 合併後用同樣設定重訓 3 個 seed。
+
+![transfer](figs/transfer.png)
+
+| test（660 張） | accuracy | 訓練時間 / run |
+|---|---|---|
+| ResNet-18 從零訓練（第 4 節最佳） | 69.2 ± 1.6 | — |
+| ResNet-18 ImageNet，128 px，lr 3e-4 | 84.3 ± 0.6 | 47 s |
+| ResNet-18 ImageNet，224 px，lr 3e-4 | 88.4 ± 0.1 | 110 s |
+| CLIP zero-shot | 86.2 | — |
+| CLIP linear probe | 97.6 | — |
+| CLIP fine-tune，lr 5e-6 | 97.6 ± 0.0 | 239 s |
+| CLIP fine-tune + pseudo-labels | 97.8 ± 0.3 | — |
+
+**觀察**
+
+1. **預訓練帶來的提升遠大於前面所有調整。** 同樣是 128 px 的 ResNet-18，換成 ImageNet 權重就從 69.2% 升到 84.3%，比第 4 節所有 augmentation 加起來還多。改成 224 px 再多 4 pt。
+2. **CLIP 不訓練就有 86.2%**，已經贏過 128 px 的 ImageNet ResNet-18。
+3. **完整 fine-tune 沒有贏過 linear probe**，兩者都是 97.6%（test 一張圖等於 0.15 pt）。CLIP 的特徵本身就足以分開這 11 類，多訓練 backbone 只是多花時間。
+4. **Pseudo-labeling 在雜訊範圍內**：97.8 ± 0.3 對 97.6 ± 0.0。差距大約一張圖。
+
+**要注意的地方**
+
+- **ResNet 選中的 lr 3e-4 在搜尋範圍的邊界**，更小的 lr 可能更好。CLIP 的 5e-6 也在邊界。這裡沒有再往外延伸。
+- **Pseudo-label 只留了 3,580 / 6,786 張（53%）。** 原因是 teacher 用 label smoothing 0.1 訓練，11 類時最高信心度約 0.91，所以 0.9 的門檻幾乎就在上限，信心度的中位數也正好是 0.90。門檻是事先定的，沒有事後調整。
+- **「rice」一張 pseudo-label 都沒有。** teacher 在 6,786 張中只把 6 張預測為 rice，最高信心度 0.72。無標籤資料沒有標註，所以無法判斷是資料裡本來就很少 rice，還是 teacher 對這類有偏差。
+- val 只有 440 張，CLIP 的幾組設定在 val 上相差 1–2 張圖，用來選擇時分辨力有限。
+
+## 9. 結論
 
 1. **最有效的是 augmentation**：test 從 37.7% 提高到 69.2%。其中 crop/flip 加 RandAugment 貢獻 29.5 pt；MixUp/CutMix 和 label smoothing 方向正確，但在雜訊範圍內。
 2. **LR 一定要衰減**；在 decayed schedule 之間，差距小於 440 張 val 能分辨的程度。
 3. **自動化 HPO 不一定贏過人工設定**：40-epoch 代理任務選出的設定，在 80 epochs 時 test 低了 1.4 pt。
 4. **ResNet-18 INT8 PTQ 沒有掉 accuracy**：模型小 4 倍、CPU 快 2.2 倍。QAT 只有在 PTQ 有損失時才值得做。
 5. **工程面**：先解碼成 uint8 cache，加上 AMP 和 channels_last，讓 GPU 不再等資料，訓練吞吐量是 FP32 的 1.89 倍。
+6. **如果允許預訓練權重**：ImageNet ResNet-18 到 88.4%，CLIP linear probe 到 97.6%。完整 fine-tune 和 pseudo-labeling 都沒有再明顯往上。
 
 ## 重現
 
@@ -161,7 +199,8 @@ uv run python -m f11.data                        # 解碼並建立 uint8 cache
 uv run python scripts/profile_pipeline.py
 uv run python scripts/experiments.py             # lr sched aug hpo distill quant
 uv run python scripts/experiments.py distill_light
+uv run python scripts/transfer.py                # 第 8 節：clip sweep seeds pseudo
 uv run python scripts/make_figs.py
 ```
 
-所有數字都來自 `runs/summary_*.json` 和 `runs/profile.json`；每次訓練的逐 epoch 紀錄存在 `runs/<name>/result.json`。
+所有數字都來自 `runs/summary_*.json` 、`runs/profile.json` 和 `runs/transfer/summary.json`；每次訓練的逐 epoch 紀錄存在 `runs/<name>/result.json`。
