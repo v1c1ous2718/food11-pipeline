@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Food-11 training pipeline: where the time and bytes go",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      520
+    ],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "main path"
+        },
+        "dashed": {
+          "label": "replaced path"
+        },
+        "default": {
+          "label": "training / export"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Data"
+    },
+    {
+      "label": "Load"
+    },
+    {
+      "label": "Train (GPU)"
+    },
+    {
+      "label": "Deploy (CPU)"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "jpeg",
+      "type": "external",
+      "label": "JPEG files",
+      "sublabel": "decode: max 1,550 img/s",
+      "stage": 0,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "cache",
+      "type": "database",
+      "label": "uint8 cache",
+      "sublabel": "decoded once, 225 MB",
+      "stage": 0,
+      "row": 2,
+      "width": 152
+    },
+    {
+      "id": "loader",
+      "type": "backend",
+      "label": "DataLoader",
+      "sublabel": "RandAugment: 6,859 img/s",
+      "stage": 1,
+      "row": 1,
+      "width": 152
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "ResNet-18",
+      "sublabel": "AMP + channels_last: 1.89x",
+      "stage": 2,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "opt",
+      "type": "backend",
+      "label": "AdamW + one-cycle",
+      "sublabel": "lr 1e-3, decays to 0",
+      "stage": 2,
+      "row": 2,
+      "width": 152
+    },
+    {
+      "id": "fp32",
+      "type": "database",
+      "label": "FP32 checkpoint",
+      "sublabel": "44.8 MB, 17.0 ms, 73.2%",
+      "stage": 3,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "int8",
+      "type": "database",
+      "label": "INT8 model",
+      "sublabel": "11.3 MB, 7.6 ms, 73.3%",
+      "stage": 3,
+      "row": 2,
+      "width": 152
+    }
+  ],
+  "flows": [
+    {
+      "id": "decode-once",
+      "from": "jpeg",
+      "to": "cache",
+      "label": "decode once",
+      "variant": "emphasis",
+      "labelAt": [
+        100,
+        270
+      ]
+    },
+    {
+      "id": "old-path",
+      "from": "jpeg",
+      "to": "loader",
+      "label": "old: decode per batch",
+      "variant": "dashed"
+    },
+    {
+      "id": "tensors",
+      "from": "cache",
+      "to": "loader",
+      "label": "uint8 tensors",
+      "variant": "emphasis"
+    },
+    {
+      "id": "batches",
+      "from": "loader",
+      "to": "model",
+      "label": "batches of 64",
+      "variant": "emphasis"
+    },
+    {
+      "id": "grads",
+      "from": "model",
+      "to": "opt",
+      "label": "scaled grads",
+      "variant": "default",
+      "labelAt": [
+        530,
+        270
+      ]
+    },
+    {
+      "id": "weights",
+      "from": "model",
+      "to": "fp32",
+      "label": "final weights",
+      "variant": "default",
+      "labelAt": [
+        638,
+        118
+      ]
+    },
+    {
+      "id": "ptq",
+      "from": "fp32",
+      "to": "int8",
+      "label": "PTQ, 512 calib images",
+      "variant": "emphasis",
+      "labelAt": [
+        745,
+        270
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "Bottleneck first",
+      "items": [
+        "JPEG decoding capped at 1,550 img/s, half of what the GPU consumes",
+        "A one-time uint8 cache moved the limit back to the GPU"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Throughput",
+      "items": [
+        "AMP alone gave 1.56x over FP32",
+        "Adding channels_last reached 1.89x (1,627 to 3,068 img/s)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "INT8 PTQ (fbgemm, batch 1)",
+      "items": [
+        "4x smaller and 2.2x faster on one CPU thread",
+        "Test accuracy unchanged, so QAT had nothing to recover"
+      ]
+    }
+  ]
+}

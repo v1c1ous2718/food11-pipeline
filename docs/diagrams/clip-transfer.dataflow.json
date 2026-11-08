@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "CLIP ViT-B/16 on Food-11: three ways to use one encoder",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      520
+    ],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "image path"
+        },
+        "default": {
+          "label": "text path"
+        },
+        "dashed": {
+          "label": "reuse"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Input"
+    },
+    {
+      "label": "Encoders"
+    },
+    {
+      "label": "Classifier"
+    },
+    {
+      "label": "Extra data"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "img",
+      "type": "frontend",
+      "label": "Food image",
+      "sublabel": "224 px, 16 px patches",
+      "stage": 0,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "prompts",
+      "type": "frontend",
+      "label": "11 text prompts",
+      "sublabel": "a photo of {c}, a type of food.",
+      "stage": 0,
+      "row": 2,
+      "width": 152
+    },
+    {
+      "id": "vit",
+      "type": "backend",
+      "label": "ViT-B/16",
+      "sublabel": "196 patches + CLS token",
+      "stage": 1,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "txt",
+      "type": "backend",
+      "label": "Text encoder",
+      "sublabel": "11 class vectors",
+      "stage": 1,
+      "row": 2,
+      "width": 152
+    },
+    {
+      "id": "lp",
+      "type": "database",
+      "label": "Linear probe",
+      "sublabel": "frozen features: 97.6%",
+      "stage": 2,
+      "row": 0,
+      "width": 152
+    },
+    {
+      "id": "ft",
+      "type": "database",
+      "label": "Full fine-tune",
+      "sublabel": "lr 5e-6, 10 ep: 97.6%",
+      "stage": 2,
+      "row": 1,
+      "width": 152
+    },
+    {
+      "id": "zs",
+      "type": "database",
+      "label": "Zero-shot",
+      "sublabel": "image vs text cosine: 86.2%",
+      "stage": 2,
+      "row": 2,
+      "width": 152
+    },
+    {
+      "id": "pseudo",
+      "type": "database",
+      "label": "+ pseudo-labels",
+      "sublabel": "3,580 of 6,786: 97.8%",
+      "stage": 3,
+      "row": 1,
+      "width": 152
+    }
+  ],
+  "flows": [
+    {
+      "id": "patches",
+      "from": "img",
+      "to": "vit",
+      "label": "patches",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tokens",
+      "from": "prompts",
+      "to": "txt",
+      "label": "tokens",
+      "variant": "default"
+    },
+    {
+      "id": "feat",
+      "from": "vit",
+      "to": "lp",
+      "label": "embedding",
+      "variant": "emphasis",
+      "labelAt": [
+        423,
+        118
+      ]
+    },
+    {
+      "id": "e2e",
+      "from": "vit",
+      "to": "ft",
+      "label": "trained too",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cosine",
+      "from": "txt",
+      "to": "zs",
+      "label": "class vectors",
+      "variant": "default",
+      "labelAt": [
+        423,
+        428
+      ]
+    },
+    {
+      "id": "init",
+      "from": "txt",
+      "to": "ft",
+      "label": "head init",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          315,
+          330
+        ],
+        [
+          530,
+          330
+        ]
+      ],
+      "labelAt": [
+        476,
+        330
+      ]
+    },
+    {
+      "id": "label",
+      "from": "ft",
+      "to": "pseudo",
+      "label": "conf >= 0.9",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Features already separate",
+      "items": [
+        "A linear layer on frozen features reaches 97.6%",
+        "Training the whole encoder also lands on 97.6%"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Compared with CNNs",
+      "items": [
+        "ResNet-18 from scratch: 69.2%",
+        "ImageNet ResNet-18 at 224 px: 88.4%"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Pseudo-label caveat",
+      "items": [
+        "Label smoothing 0.1 caps confidence near 0.91",
+        "So the 0.9 threshold kept only 53%"
+      ]
+    }
+  ]
+}

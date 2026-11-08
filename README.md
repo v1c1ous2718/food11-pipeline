@@ -16,6 +16,14 @@ Full report (in Chinese): [`report/report.md`](report/report.md). Raw results ar
 
 Also covered: LR sweep, schedulers (constant, step, cosine, warmup, one-cycle), QAT and TTA.
 
+## Diagrams
+
+Annotated with the numbers measured in this repo. Interactive HTML versions are in [`docs/diagrams/`](docs/diagrams/).
+
+![Training pipeline](docs/diagrams/training-pipeline.png)
+
+![CLIP transfer](docs/diagrams/clip-transfer.png)
+
 ```bash
 uv sync
 uv run python scripts/profile_pipeline.py
