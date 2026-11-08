@@ -1,0 +1,10 @@
+data/
+.venv/
+__pycache__/
+*.pt
+*.onnx
+*.log
+# keep only the small result files from runs/
+runs/**
+!runs/**/
+!runs/**/*.json

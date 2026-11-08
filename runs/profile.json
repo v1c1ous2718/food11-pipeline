@@ -1,0 +1,150 @@
+{
+ "loader": [
+  {
+   "source": "jpeg",
+   "aug": "basic",
+   "workers": 0,
+   "img_per_s": 310.2911357457812
+  },
+  {
+   "source": "jpeg",
+   "aug": "basic",
+   "workers": 4,
+   "img_per_s": 1101.117216258732
+  },
+  {
+   "source": "jpeg",
+   "aug": "basic",
+   "workers": 8,
+   "img_per_s": 1549.736697958179
+  },
+  {
+   "source": "jpeg",
+   "aug": "basic",
+   "workers": 12,
+   "img_per_s": 1561.0587646965566
+  },
+  {
+   "source": "cache",
+   "aug": "basic",
+   "workers": 0,
+   "img_per_s": 4444.472117019685
+  },
+  {
+   "source": "cache",
+   "aug": "basic",
+   "workers": 4,
+   "img_per_s": 12863.788453718626
+  },
+  {
+   "source": "cache",
+   "aug": "basic",
+   "workers": 8,
+   "img_per_s": 14879.222811904881
+  },
+  {
+   "source": "cache",
+   "aug": "randaug",
+   "workers": 0,
+   "img_per_s": 1503.2210219482681
+  },
+  {
+   "source": "cache",
+   "aug": "randaug",
+   "workers": 4,
+   "img_per_s": 4384.0825631456
+  },
+  {
+   "source": "cache",
+   "aug": "randaug",
+   "workers": 8,
+   "img_per_s": 6858.690841506142
+  }
+ ],
+ "gpu": [
+  {
+   "arch": "resnet18",
+   "amp": false,
+   "channels_last": false,
+   "bs": 64,
+   "img_per_s": 1626.5544261270848
+  },
+  {
+   "arch": "resnet18",
+   "amp": false,
+   "channels_last": false,
+   "bs": 128,
+   "img_per_s": 1701.8794631578282
+  },
+  {
+   "arch": "resnet18",
+   "amp": true,
+   "channels_last": false,
+   "bs": 64,
+   "img_per_s": 2538.5808241224604
+  },
+  {
+   "arch": "resnet18",
+   "amp": true,
+   "channels_last": false,
+   "bs": 128,
+   "img_per_s": 2732.5487277192024
+  },
+  {
+   "arch": "resnet18",
+   "amp": true,
+   "channels_last": true,
+   "bs": 64,
+   "img_per_s": 3068.149376776924
+  },
+  {
+   "arch": "resnet18",
+   "amp": true,
+   "channels_last": true,
+   "bs": 128,
+   "img_per_s": 3353.111395992849
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": false,
+   "channels_last": false,
+   "bs": 64,
+   "img_per_s": 2112.0564276437685
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": false,
+   "channels_last": false,
+   "bs": 128,
+   "img_per_s": 2252.6678164635905
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": true,
+   "channels_last": false,
+   "bs": 64,
+   "img_per_s": 2505.1497789984223
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": true,
+   "channels_last": false,
+   "bs": 128,
+   "img_per_s": 3405.7400376156847
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": true,
+   "channels_last": true,
+   "bs": 64,
+   "img_per_s": 2578.849815548506
+  },
+  {
+   "arch": "mbv2_050",
+   "amp": true,
+   "channels_last": true,
+   "bs": 128,
+   "img_per_s": 4073.562442228735
+  }
+ ]
+}
