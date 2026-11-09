@@ -181,9 +181,9 @@
 - **「rice」一張 pseudo-label 都沒有。** teacher 在 6,786 張中只把 6 張預測為 rice，最高信心度 0.72。無標籤資料沒有標註，所以無法判斷是資料裡本來就很少 rice，還是 teacher 對這類有偏差。
 - val 只有 440 張，CLIP 的幾組設定在 val 上相差 1–2 張圖，用來選擇時分辨力有限。
 
-## 9. 追加：超參數逐項研究（ResNet-18 + SiLU）
+## 9. 追加：Hyperparameter 逐項研究（ResNet-18 + SiLU）
 
-前面各節的 ResNet-18 都用 ReLU。這一節是事後追加的：把 activation 全部換成 SiLU，每次只改一個超參數，其他維持參考設定，看每個超參數單獨的效果。組別和數值在跑之前就定好，每列都是 3 個 seed、80 epochs，全部列出，沒有從這裡挑設定回去用。
+前面各節的 ResNet-18 都用 ReLU。這一節是事後追加的：把 activation 全部換成 SiLU，每次只改一個 hyperparameter，其他維持參考設定，看每個 hyperparameter 單獨的效果。組別和數值在跑之前就定好，每列都是 3 個 seed、80 epochs，全部列出，沒有從這裡挑設定回去用。
 
 - 參考設定（ref）：AdamW lr 1e-3、weight decay 0.05、one-cycle（前 25% warmup，之後 cosine annealing 到接近 0）、RandAugment + MixUp/CutMix 0.5 + label smoothing 0.1、linear head、不加 dropout。
 - momentum 這組用 SGD（lr 0.03、wd 5e-4、cosine、只有 crop/flip），因為 momentum 是 SGD 的參數（AdamW 對應的是 β1）。
@@ -200,14 +200,14 @@ Augmentation 逐項加入（SiLU）：
 | + MixUp/CutMix (p = 0.5) | 70.5 ± 1.7 | 68.2 ± 0.8 | 63.4* |
 | + label smoothing 0.1（ref） | 70.8 ± 0.9 | 68.0 ± 1.2 | 63.5* |
 
-和第 4 節的 ReLU 版幾乎一樣：crop/flip +25.1 pt、RandAugment +4.5 pt；MixUp/CutMix 和 label smoothing 仍在雜訊範圍內。
+和第 4 節的 ReLU 版幾乎一樣：crop/flip +25.1 pt、RandAugment +4.5 pt；MixUp/CutMix 和 label smoothing 仍在 noise 範圍內。
 
 ![hparams](figs/hparams_dots.png)
 
 | 組別 | 設定（test mean ± std） | 結論 |
 |---|---|---|
-| momentum（SGD） | 0：54.6 ± 1.8；0.9：60.3 ± 0.9；0.9 Nesterov：60.6 ± 1.4；0.99 Nesterov：59.7 ± 2.1 | 加 momentum +5.7 pt，是這一節最大的效果。Nesterov 和 heavy ball 差異在雜訊內；0.99 沒有更好 |
-| dropout（fc 前） | 0：68.0 ± 1.2；0.2：68.8 ± 0.7；0.5：67.2 ± 1.4 | 差距都在 1 個 std 內。augmentation 已經很強，dropout 沒有明顯作用 |
+| momentum（SGD） | 0：54.6 ± 1.8；0.9：60.3 ± 0.9；0.9 Nesterov：60.6 ± 1.4；0.99 Nesterov：59.7 ± 2.1 | 加 momentum +5.7 pt，是這一節最大的效果。Nesterov 和 heavy ball 差異在 noise 內；0.99 沒有更好 |
+| dropout（fc 前） | 0：68.0 ± 1.2；0.2：68.8 ± 0.7；0.5：67.2 ± 1.4 | 差距都在 1 個 std 內。augmentation 已經足夠，dropout 沒有明顯作用 |
 | classifier head | linear：68.0 ± 1.2；MLP 256：67.9 ± 0.5；MLP 1024：67.5 ± 1.6 | 多一層 hidden layer 沒有幫助 |
 | L2（AdamW decoupled wd） | 0：68.4 ± 0.7；0.005：68.5 ± 0.5；0.05：68.0 ± 1.2；0.5：69.4 ± 1.0 | 0 到 0.5 差距約 1 個 std；wd 0.5 最高，但不顯著 |
 | L1（wd 0） | 1e-5：69.3 ± 1.4；1e-4：63.6 ± 0.5 | 1e-5 和不加差不多；1e-4 太強，train 只剩 50%，test 掉 4.8 pt |
@@ -216,11 +216,11 @@ Augmentation 逐項加入（SiLU）：
 Schedule 的觀察：
 ![sched_shapes](figs/sched_shapes.png)
 
-- one-cycle 和 cosine 都用 cosine annealing 把 lr 降到接近 0。one-cycle 多了前 25% 的 warmup，而且 PyTorch 的 `OneCycleLR` 預設會讓 AdamW 的 β1 在 0.95 和 0.85 之間反向調整。換成純 cosine，test 低 1.9 pt；這次沒有拆開 warmup 和 β1 各自的貢獻。
-- T = 2 × run 表示訓練結束時 cosine 只進行到一半，lr 還有峰值的一半。lr 沒降到 0，test 再低 0.9 pt。
-- Warm restarts 每 T0 個 epoch 把 lr 重設為峰值。80 epochs 下兩種 T0 都比單一 cosine 低 1–1.7 pt。
+- one-cycle 和 cosine 都用 cosine annealing 到接近 0。one-cycle 多了前 25% 的 warmup，而且 PyTorch 的 `OneCycleLR` 預設會讓 AdamW 的 β1 在 0.95 和 0.85 之間反向調整。換成純 cosine，test 低 1.9 pt；這次沒有拆開 warmup 和 β1 各自的貢獻。
+- T = 2 × run 表示訓練結束時 cosine annealing 只完成一半，lr 還有 peak 的一半。annealing 沒完成，test 再低 0.9 pt。
+- Warm restarts 每 T0 個 epoch 把 lr 重設為 peak。80 epochs 下兩種 T0 都比單一 cosine 低 1–1.7 pt。
 
-小結：在 2,640 張的資料上，影響最大的是 augmentation 和 momentum；schedule 上 one-cycle 最好，lr 沒降到 0 或中途 restart 都會再低 1–2 pt；dropout、hidden layer、L2 的強度差距都在 3 個 seed 的雜訊內；L1 太強會明顯 underfit。
+小結：在 2,640 張的資料上，影響最大的是 augmentation 和 momentum；schedule 上 one-cycle 最好，annealing 沒完成或中途 restart 都會再低 1–2 pt；dropout、hidden layer、L2 的強度差距都在 3 個 seed 的 noise 內；L1 太強會明顯 underfit。
 
 ## 10. 結論
 
@@ -229,7 +229,7 @@ Schedule 的觀察：
 3. **自動化 HPO 不一定贏過人工設定**：40-epoch 代理任務選出的設定，在 80 epochs 時 test 低了 1.4 pt。
 4. **ResNet-18 INT8 PTQ 沒有掉 accuracy**：模型小 4 倍、CPU 快 2.2 倍。QAT 只有在 PTQ 有損失時才值得做。
 5. **工程面**：先解碼成 uint8 cache，加上 AMP 和 channels_last，讓 GPU 不再等資料，訓練吞吐量是 FP32 的 1.89 倍。
-6. **逐項調超參數（SiLU）**：momentum +5.7 pt、one-cycle 比純 cosine +1.9 pt；dropout、hidden layer、L2 在雜訊內，L1 1e-4 掉 4.8 pt。
+6. **逐項調 hyperparameter（SiLU）**：momentum +5.7 pt、one-cycle 比純 cosine +1.9 pt；dropout、hidden layer、L2 在雜訊內，L1 1e-4 掉 4.8 pt。
 7. **如果允許預訓練權重**：ImageNet ResNet-18 到 88.4%，CLIP linear probe 到 97.6%。完整 fine-tune 和 pseudo-labeling 都沒有再明顯往上。
 
 ## 重現
