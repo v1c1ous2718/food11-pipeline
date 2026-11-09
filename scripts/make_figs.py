@@ -169,6 +169,53 @@ def fig_transfer():
     save(fig, "transfer.png")
 
 
+def fig_hparams():
+    s = j("summary_hparams.json")
+    if not s: return
+    groups = [(g, rows) for g, rows in s.items() if not g.startswith("augmentation")]
+    n = sum(len(r) for _, r in groups)
+    fig, ax = plt.subplots(figsize=(7.2, 0.34 * n + 0.45 * len(groups) + 0.8))
+    y, ticks, labs = 0.0, [], []
+    for g, rows in groups:
+        ax.text(0.0, y - 0.15, g, transform=ax.get_yaxis_transform(), fontsize=9, fontweight="bold", color=INK2, ha="left")
+        y += 0.75
+        for r in rows:
+            ax.errorbar(r["test_mean"] * 100, y, xerr=r["test_std"] * 100, fmt="s", color=C2, ms=5, capsize=3)
+            ax.plot(r["val_mean"] * 100, y, "o", color=C1, ms=4, alpha=0.6)
+            ticks.append(y); labs.append(r["label"]); y += 1
+        y += 0.3
+    ax.set_yticks(ticks, labs, fontsize=8.5); ax.set_ylim(y - 0.5, -0.8)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("accuracy (%), squares = test mean ± std (3 seeds), dots = val mean")
+    ax.set_title("One-factor-at-a-time study (ResNet-18 + SiLU, 80 epochs)", loc="left", fontsize=11)
+    save(fig, "hparams_dots.png")
+
+
+def fig_sched_shapes():
+    """LR multiplier over training for the schedule group, labelled with its test accuracy."""
+    import torch
+    from f11.train import Cfg, lr_at
+    s = j("summary_hparams.json")
+    if not s or "schedule" not in s: return
+    rows = s["schedule"]; E, spe = 80, 42; total = E * spe
+    p = torch.nn.Parameter(torch.zeros(1)); opt = torch.optim.AdamW([p], lr=1.0)
+    oc = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=1.0, total_steps=total, pct_start=0.25)
+    one = []
+    for _ in range(total):
+        one.append(opt.param_groups[0]["lr"]); opt.step(); oc.step()
+    curves = [one] + [[lr_at(Cfg(name="x", sched="cosine", epochs=E, **kw), st, total, spe) for st in range(total)]
+                      for kw in ({}, {"cos_T": 2.0}, {"restart": 20}, {"restart": 10})]
+    fig, ax = plt.subplots(figsize=(6.4, 2.6))
+    pal = [C2, C1, "#6250d6", C3, "#eda100"]
+    x = np.arange(total) / spe
+    for c, r, col in zip(curves, rows, pal):
+        ax.plot(x, c, color=col, lw=1.6, label=f"{r['label']}: {r['test_mean']*100:.1f} ± {r['test_std']*100:.1f}")
+    ax.set_xlabel("epoch"); ax.set_ylabel("lr / peak lr"); ax.set_xlim(0, E)
+    ax.legend(frameon=False, fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0), title="test acc (%), 3 seeds", title_fontsize=8)
+    ax.set_title("LR schedules (AdamW, peak 1e-3)", loc="left", fontsize=11)
+    save(fig, "sched_shapes.png")
+
+
 if __name__ == "__main__":
     fig_profile(); fig_lr(); fig_curves()
     for st, title, tr in [("sched", "Optimizer x LR schedule", False), ("aug", "Augmentation ladder", True),
@@ -176,4 +223,6 @@ if __name__ == "__main__":
                           ("distill_light", "Student recipe follow-up (200 epochs)", True)]:
         s = j(f"summary_{st}.json")
         if s: dotplot(s["rows"], title, f"{st}_dots.png", tr)
-    fig_hpo(); fig_quant(); fig_transfer()
+    fig_hpo(); fig_quant(); fig_transfer(); fig_hparams(); fig_sched_shapes()
+    s = j("summary_hparams.json")
+    if s: dotplot(s["augmentation (SiLU)"], "Augmentation ladder (SiLU)", "aug_silu_dots.png", True)

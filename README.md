@@ -11,10 +11,11 @@ Full report (in Chinese): [`report/report.md`](report/report.md). Raw results ar
 | Augmentation ladder (3 seeds) | 37.7% → 69.2% (crop/flip +24.7, RandAugment +4.8; MixUp/CutMix and label smoothing within noise). |
 | INT8 PTQ, ResNet-18 | 44.8 → 11.3 MB; 1-thread CPU latency 17.0 → 7.6 ms; accuracy unchanged (73.2 → 73.3). |
 | Optuna (TPE + median pruning) | Did **not** beat the hand-picked setting (67.8 vs 69.2). The 440-image validation set is too small to rank close configurations. |
+| One-factor-at-a-time study (ResNet-18 + SiLU, 3 seeds) | Momentum 0 → 0.9: +5.7 pt (SGD). One-cycle (warmup + cosine annealing, with β1 cycling) beats plain cosine by 1.9 pt and warm restarts by 3–4 pt. Dropout, an MLP head and L2 strength stay within noise; L1 1e-4 costs 4.8 pt. |
 | Knowledge distillation | Small, consistent gain (+1.4 / +2.0 pt). |
 | Pretrained backbones (outside the homework rules) | ImageNet ResNet-18: 84.3% at 128 px, 88.4% at 224 px. CLIP ViT-B/16: zero-shot 86.2%, linear probe 97.6%, full fine-tune 97.6%, plus pseudo-labels 97.8 ± 0.3 (within noise). |
 
-Also covered: LR sweep, schedulers (constant, step, cosine, warmup, one-cycle), QAT and TTA.
+Sections before the SiLU study use ReLU (the INT8 model needs ReLU for fbgemm fusion). Also covered: LR sweep, schedulers (constant, step, cosine, warmup, one-cycle), QAT and TTA.
 
 ## Diagrams
 
@@ -27,7 +28,7 @@ Annotated with the numbers measured in this repo. Interactive HTML versions are 
 ```bash
 uv sync
 uv run python scripts/profile_pipeline.py
-uv run python scripts/experiments.py            # all stages; or name stages, e.g. aug quant
+uv run python scripts/experiments.py            # default stages; or name stages, e.g. aug quant hparams
 uv run python scripts/transfer.py               # pretrained backbones: clip sweep seeds pseudo
 uv run python scripts/make_figs.py
 ```

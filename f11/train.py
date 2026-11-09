@@ -43,6 +43,15 @@ class Cfg:
     kd_alpha: float = 0.0       # weight on KD term
     kd_T: float = 4.0
     eval_test: bool = True
+    # hyperparameter study (defaults = original behaviour)
+    momentum: float = 0.9       # SGD only
+    nesterov: bool = True       # SGD only
+    dropout: float = 0.0        # before the classifier
+    hidden: int = 0             # >0: 512 -> hidden -> 11 MLP head (ReLU)
+    l1: float = 0.0             # L1 penalty on weight matrices / kernels, added to the loss
+    cos_T: float = 1.0          # cosine period as a multiple of the run (2.0 = stops at half amplitude)
+    act: str = "relu"          # relu | silu | gelu (ResNet-18 activations)
+    restart: int = 0            # >0: cosine with warm restarts every `restart` epochs (SGDR, T_mult 1)
     extra: dict = field(default_factory=dict)
 
 
@@ -62,7 +71,10 @@ def lr_at(cfg: Cfg, step: int, total: int, spe: int) -> float:
     if cfg.sched == "step":
         return 0.1 ** int(e >= 0.5 * cfg.epochs) * 0.1 ** int(e >= 0.75 * cfg.epochs)
     if cfg.sched == "cosine":
-        t = (step - cfg.warmup * spe) / max(1, total - cfg.warmup * spe)
+        if cfg.restart:
+            t = (step % (cfg.restart * spe)) / (cfg.restart * spe)
+        else:
+            t = (step - cfg.warmup * spe) / max(1, total - cfg.warmup * spe) / cfg.cos_T
         return 0.5 * (1 + math.cos(math.pi * t))
     raise ValueError(cfg.sched)
 
@@ -88,7 +100,8 @@ def evaluate(model, x: torch.Tensor, y: torch.Tensor, norm, tta=False, bs=256, r
 
 def load_model(run: str, device="cuda"):
     meta = json.loads((RUNS / run / "result.json").read_text())
-    m = build(meta["cfg"]["arch"])
+    c = meta["cfg"]
+    m = build(c["arch"], c.get("dropout", 0.0), c.get("hidden", 0), c.get("act", "relu"))
     m.load_state_dict(torch.load(RUNS / run / "model.pt", map_location="cpu"))
     return m.to(device)
 
@@ -110,7 +123,7 @@ def run(cfg: Cfg | dict, quiet=False, callback=None, save=True) -> dict:
     dl = DataLoader(D.CachedDS(xtr, ytr, D.train_transform(cfg.aug)), batch_size=cfg.bs, shuffle=True,
                     drop_last=True, num_workers=8, pin_memory=True, persistent_workers=True, generator=g)
 
-    model = build(cfg.arch).to(dev)
+    model = build(cfg.arch, cfg.dropout, cfg.hidden, cfg.act).to(dev)
     if cfg.channels_last:
         model = model.to(memory_format=torch.channels_last)
     norm = D.GpuNormalize().to(dev)
@@ -124,7 +137,7 @@ def run(cfg: Cfg | dict, quiet=False, callback=None, save=True) -> dict:
     no_decay = [p for n, p in model.named_parameters() if p.ndim <= 1]
     groups = [{"params": decay, "weight_decay": cfg.wd}, {"params": no_decay, "weight_decay": 0.0}]
     if cfg.opt == "sgd":
-        opt = torch.optim.SGD(groups, lr=cfg.lr, momentum=0.9, nesterov=True)
+        opt = torch.optim.SGD(groups, lr=cfg.lr, momentum=cfg.momentum, nesterov=cfg.nesterov and cfg.momentum > 0)
     elif cfg.opt == "adamw":
         opt = torch.optim.AdamW(groups, lr=cfg.lr)
     else:
@@ -157,6 +170,8 @@ def run(cfg: Cfg | dict, quiet=False, callback=None, save=True) -> dict:
             with torch.autocast("cuda", dtype=torch.float16, enabled=cfg.amp):
                 logits = model(xb)
                 loss = torch.sum(-target * F.log_softmax(logits.float(), 1), 1).mean()
+                if cfg.l1:
+                    loss = loss + cfg.l1 * sum(w.abs().sum() for w in decay)
                 if teacher is not None:
                     with torch.no_grad():
                         tlog = teacher(xb).float()

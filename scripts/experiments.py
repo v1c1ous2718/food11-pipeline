@@ -16,7 +16,10 @@ def name(c: dict) -> str:
     keys = ["arch", "opt", "lr", "wd", "sched", "warmup", "aug", "mix", "smooth", "epochs", "teacher", "kd_alpha", "seed"]
     d = {"opt": "sgd", "lr": 0.1, "wd": 5e-4, "sched": "cosine", "warmup": 0, "aug": "basic", "mix": 0.0,
          "smooth": 0.0, "epochs": 80, "teacher": "", "kd_alpha": 0.0, "seed": 0, **c}
-    return "_".join(f"{d[k]}" for k in keys if d[k] != "" ).replace("/", "-")
+    extra = {"momentum": 0.9, "nesterov": True, "dropout": 0.0, "hidden": 0, "l1": 0.0, "cos_T": 1.0, "restart": 0,
+             "act": "relu"}
+    tail = "".join(f"_{k}{c[k]}" for k in extra if k in c and c[k] != extra[k])
+    return ("_".join(f"{d[k]}" for k in keys if d[k] != "" ) + tail).replace("/", "-")
 
 
 def go(c: dict) -> dict:
@@ -93,6 +96,46 @@ def stage_aug():
     print(f"  {tta['label']:28s} val {mean(v)*100:.1f}±{stdev(v)*100:.1f}  test {mean(t)*100:.1f}±{stdev(t)*100:.1f}")
     res.append(tta)
     save("aug", {"rows": res, "best": max(res[:-1], key=lambda r: r["val_mean"])})
+
+
+def stage_hparams():
+    """Pre-registered one-factor-at-a-time study (added 2026-11-08, after the main stages).
+    Each row changes one knob of a fixed reference; 3 seeds; every row is reported, nothing is selected from it.
+    AdamW reference = the hand-picked recipe of the aug stage (one-cycle lr 1e-3, wd 0.05, RandAugment,
+    MixUp/CutMix 0.5, label smoothing 0.1). SGD reference (momentum only) = the sched stage's SGD cosine run.
+    Every run in this study uses SiLU instead of ReLU (no activation comparison), including a re-run of the
+    augmentation ladder so that the augmentation numbers come from the same network."""
+    ref = dict(opt="adamw", lr=1e-3, wd=0.05, sched="onecycle", warmup=0, aug="randaug", mix=0.5, smooth=0.1,
+               act="silu")
+    sgd = dict(opt="sgd", lr=0.03, wd=5e-4, sched="cosine", warmup=0, act="silu")
+    base = {k: v for k, v in ref.items() if k not in ("aug", "mix", "smooth")}
+    groups = {
+        "augmentation (SiLU)": [({**base, "aug": "none"}, "no augmentation"),
+                                ({**base, "aug": "basic"}, "+ crop/flip"),
+                                ({**base, "aug": "randaug"}, "+ RandAugment"),
+                                ({**base, "aug": "randaug", "mix": 0.5}, "+ MixUp/CutMix (p=0.5)"),
+                                (ref, "+ label smoothing 0.1 (ref)")],
+        "momentum (SGD, lr 0.03, cosine, basic aug)": [
+            ({**sgd, "momentum": 0.0}, "no momentum"),
+            ({**sgd, "nesterov": False}, "momentum 0.9 (heavy ball)"),
+            (sgd, "momentum 0.9 + Nesterov (ref)"),
+            ({**sgd, "momentum": 0.99}, "momentum 0.99 + Nesterov")],
+        "dropout before fc": [(ref, "0 (ref)"), ({**ref, "dropout": 0.2}, "0.2"), ({**ref, "dropout": 0.5}, "0.5")],
+        "classifier head": [(ref, "linear 512->11 (ref)"), ({**ref, "hidden": 256}, "MLP 512->256->11"),
+                            ({**ref, "hidden": 1024}, "MLP 512->1024->11")],
+        "L2 (decoupled weight decay)": [({**ref, "wd": 0.0}, "0"), ({**ref, "wd": 0.005}, "0.005"),
+                                        (ref, "0.05 (ref)"), ({**ref, "wd": 0.5}, "0.5")],
+        "L1 penalty (wd 0)": [({**ref, "wd": 0.0, "l1": 1e-5}, "1e-5"), ({**ref, "wd": 0.0, "l1": 1e-4}, "1e-4")],
+        "schedule": [(ref, "one-cycle (ref)"), ({**ref, "sched": "cosine"}, "cosine, T = run"),
+                     ({**ref, "sched": "cosine", "cos_T": 2.0}, "cosine, T = 2x run"),
+                     ({**ref, "sched": "cosine", "restart": 20}, "warm restarts, T0 = 20 ep"),
+                     ({**ref, "sched": "cosine", "restart": 10}, "warm restarts, T0 = 10 ep")],
+    }
+    out = {}
+    for g, rows in groups.items():
+        print(f"== {g}")
+        out[g] = [seeds(c, lab) for c, lab in rows]
+        save("hparams", out)
 
 
 def stage_hpo(n_trials=30, epochs=40):
@@ -185,7 +228,9 @@ def stage_distill_light(epochs=200):
 
 
 STAGES["distill_light"] = stage_distill_light
+STAGES["hparams"] = stage_hparams
+
 
 if __name__ == "__main__":
-    for st in sys.argv[1:] or [k for k in STAGES if k != "distill_light"]:
+    for st in sys.argv[1:] or [k for k in STAGES if k not in ("distill_light", "hparams")]:
         STAGES[st]()
