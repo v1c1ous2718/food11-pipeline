@@ -17,6 +17,35 @@ Full report (in Chinese): [`report/report.md`](report/report.md). Raw results ar
 
 Sections before the SiLU study use ReLU (the INT8 model needs ReLU for fbgemm fusion). Also covered: LR sweep, schedulers (constant, step, cosine, warmup, one-cycle), QAT and TTA.
 
+## Figures
+
+![data loader](report/figs/profile_loader.png)
+
+Throughput of each DataLoader setting; the vertical line is what the GPU consumes. Decoding JPEGs every batch tops
+out at 1,550 img/s, half of the GPU's 3,068 img/s. A uint8 cache decoded once reaches 6,859 img/s and moves the
+bottleneck back to the GPU; only then do AMP and channels-last pay off.
+
+![AMP](report/figs/profile_gpu.png)
+
+AMP plus channels-last trains ResNet-18 at 1.89× FP32 throughput.
+
+![INT8](report/figs/quant_pareto.png)
+
+Accuracy vs single-thread CPU latency. Conv/BN/ReLU fusion, calibration on 512 training images, then INT8
+post-training quantization (x86 / fbgemm): 44.8 → 11.3 MB, 17.0 → 7.6 ms, test accuracy 73.2% → 73.3%.
+Quantization-aware training did no better.
+
+![augmentation](report/figs/aug_silu_dots.png)
+
+Augmentation added one at a time (ResNet-18 + SiLU, 3 seeds). Without it the model memorizes the 2,640 training
+images (train 100%, test 37.8%). Crop/flip and RandAugment account for almost all of the gain; MixUp/CutMix and label
+smoothing stay within the seed spread of about 1 point.
+
+![schedules](report/figs/sched_shapes.png)
+
+LR schedules compared in the one-factor study: one-cycle warms up and then anneals to near zero; cosine with
+T = 2× the run anneals only halfway; warm restarts reset the lr every T0 epochs.
+
 ## Diagrams
 
 Annotated with the numbers measured in this repo. Interactive HTML versions are in [`docs/diagrams/`](docs/diagrams/).
